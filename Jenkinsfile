@@ -5,6 +5,7 @@ pipeline {
 		DOCKER_IMAGE = "logistics-monolith:${BUILD_NUMBER}"
 		METRICS_DIR = "${WORKSPACE}/metrics"
 		METRICS_FILE = "${WORKSPACE}/metrics/build_metrics_monolith.csv"
+		TESTCONTAINERS_RYUK_DISABLED = 'true'
 	}
 
 	stages {
