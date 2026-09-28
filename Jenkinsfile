@@ -25,11 +25,20 @@ pipeline {
 				sh '''
                     START=$(date +%s%3N)
 
-                    mvn clean compile
+                    mvn clean compile &
+                    MVN_PID=$!
+                    PEAK_KB=0
+                    while kill -0 $MVN_PID 2>/dev/null; do
+                        CURRENT_KB=$(ps -eo pid,ppid,rss | awk -v p=$MVN_PID '$1==p || $2==p {sum+=$3} END {print sum+0}')
+                        if [ "$CURRENT_KB" -gt "$PEAK_KB" ]; then PEAK_KB=$CURRENT_KB; fi
+                        sleep 0.2
+                    done
+                    wait $MVN_PID
 
                     END=$(date +%s%3N)
                     DIFF=$((END - START))
-                    echo "${BUILD_NUMBER},compile,${DIFF},0,0" >> ${METRICS_FILE}
+                    PEAK_MB=$(awk "BEGIN {printf \\"%.2f\\", ${PEAK_KB}/1024}")
+                    echo "${BUILD_NUMBER},compile,${DIFF},${PEAK_MB},0" >> ${METRICS_FILE}
                 '''
 			}
 		}
@@ -39,30 +48,20 @@ pipeline {
 				sh '''
                     START=$(date +%s%3N)
 
-                    # Monitor pamięci RAM w tle (próbkowanie co 0.5s)
-                    MEM_LOG="${METRICS_DIR}/test_mem.log"
-                    rm -f ${MEM_LOG}
-                    (while true; do
-                        # Pobieranie zużycia pamięci RSS procesu Maven/Java
-                        ps -o rss,command -C java | awk '{print $1}' | sort -nr | head -n1 >> ${MEM_LOG}
-                        sleep 0.5
-                    done) &
-                    MONITOR_PID=$!
-
-                    # Wykonanie testów
-                    mvn test
+                    mvn test &
+                    MVN_PID=$!
+                    PEAK_KB=0
+                    while kill -0 $MVN_PID 2>/dev/null; do
+                        CURRENT_KB=$(ps -eo pid,ppid,rss | awk -v p=$MVN_PID '$1==p || $2==p {sum+=$3} END {print sum+0}')
+                        if [ "$CURRENT_KB" -gt "$PEAK_KB" ]; then PEAK_KB=$CURRENT_KB; fi
+                        sleep 0.2
+                    done
+                    wait $MVN_PID
                     TEST_STATUS=$?
-
-                    # Zatrzymanie monitora pamięci
-                    kill $MONITOR_PID || true
 
                     END=$(date +%s%3N)
                     DIFF=$((END - START))
-
-                    # Obliczenie szczytowego RAM w MB
-                    PEAK_KB=$(sort -nr ${MEM_LOG} 2>/dev/null | head -n1 || echo 0)
-                    if [ -z "$PEAK_KB" ]; then PEAK_KB=0; fi
-                    PEAK_MB=$(echo "scale=2; ${PEAK_KB} / 1024" | bc)
+                    PEAK_MB=$(awk "BEGIN {printf \\"%.2f\\", ${PEAK_KB}/1024}")
 
                     echo "${BUILD_NUMBER},tests,${DIFF},${PEAK_MB},0" >> ${METRICS_FILE}
 
@@ -83,11 +82,20 @@ pipeline {
 				sh '''
                     START=$(date +%s%3N)
 
-                    mvn package -DskipTests
+                    mvn package -DskipTests &
+                    MVN_PID=$!
+                    PEAK_KB=0
+                    while kill -0 $MVN_PID 2>/dev/null; do
+                        CURRENT_KB=$(ps -eo pid,ppid,rss | awk -v p=$MVN_PID '$1==p || $2==p {sum+=$3} END {print sum+0}')
+                        if [ "$CURRENT_KB" -gt "$PEAK_KB" ]; then PEAK_KB=$CURRENT_KB; fi
+                        sleep 0.2
+                    done
+                    wait $MVN_PID
 
                     END=$(date +%s%3N)
                     DIFF=$((END - START))
-                    echo "${BUILD_NUMBER},package,${DIFF},0,0" >> ${METRICS_FILE}
+                    PEAK_MB=$(awk "BEGIN {printf \\"%.2f\\", ${PEAK_KB}/1024}")
+                    echo "${BUILD_NUMBER},package,${DIFF},${PEAK_MB},0" >> ${METRICS_FILE}
                 '''
 			}
 		}
@@ -102,9 +110,8 @@ pipeline {
                     END=$(date +%s%3N)
                     DIFF=$((END - START))
 
-                    # Rozmiar obrazu w MB
                     IMG_BYTES=$(docker inspect -f "{{ .Size }}" ${DOCKER_IMAGE})
-                    IMG_MB=$(echo "scale=2; ${IMG_BYTES} / 1048576" | bc)
+                    IMG_MB=$(awk "BEGIN {printf \\"%.2f\\", ${IMG_BYTES}/1048576}")
 
                     echo "${BUILD_NUMBER},docker_build,${DIFF},0,${IMG_MB}" >> ${METRICS_FILE}
                 '''
@@ -114,7 +121,6 @@ pipeline {
 
 	post {
 		always {
-			// Zachowanie pliku metryk jako artefaktu Jenkinsa
 			archiveArtifacts artifacts: 'metrics/*.csv', allowEmptyArchive: true
 		}
 	}
