@@ -91,7 +91,8 @@ pipeline {
                         sleep 0.2
                     done
                     wait $MVN_PID
-
+                    COMPILE_STATUS=$?
+                    if [ $COMPILE_STATUS -ne 0 ]; then exit $COMPILE_STATUS; fi
                     END=$(date +%s%3N)
                     DIFF=$((END - START))
                     PEAK_MB=$(awk "BEGIN {printf \\"%.2f\\", ${PEAK_KB}/1024}")
